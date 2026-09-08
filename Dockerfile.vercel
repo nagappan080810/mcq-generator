@@ -1,0 +1,33 @@
+# -----------------------------------------------------------------------------
+# Dockerfile.vercel - Vercel container deployment
+#
+# Vercel detects a `Dockerfile.vercel` (or `Containerfile.vercel`) at the root
+# and deploys the resulting OCI image as a Vercel Function (Container Image).
+#
+# Vercel routes HTTP traffic to port 80 by default, or the value of the
+# $PORT environment variable. The app must serve HTTP and be stateless.
+# -----------------------------------------------------------------------------
+
+# ---- Stage 1: compile + build native image with GraalVM ----
+FROM ghcr.io/graalvm/native-image-community:25 AS builder
+
+WORKDIR /build
+
+COPY .mvn .mvn
+COPY mvnw pom.xml ./
+RUN ./mvnw -q -DskipTests dependency:go-offline || true
+
+COPY src ./src
+RUN ./mvnw -Pnative native:compile -DskipTests
+
+# ---- Stage 2: minimal runtime - no JVM needed ----
+FROM debian:bookworm-slim
+
+RUN groupadd -r spring && useradd -r -g spring spring
+WORKDIR /app
+
+COPY --from=builder /build/target/hello ./app
+
+# Vercel sets $PORT (default 80). Do not hardcode a port here.
+# The native app is started with -Dserver.port=$PORT resolved at runtime.
+CMD ["sh", "-c", "./app -Dserver.port=${PORT:-80}"]

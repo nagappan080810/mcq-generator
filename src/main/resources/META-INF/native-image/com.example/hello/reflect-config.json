@@ -1,0 +1,18 @@
+[
+  {
+    "name": "org.apache.coyote.AbstractProtocol",
+    "allPublicMethods": true
+  },
+  {
+    "name": "org.apache.coyote.AbstractHttp11Protocol",
+    "allPublicMethods": true
+  },
+  {
+    "name": "org.apache.coyote.http11.Http11NioProtocol",
+    "allPublicMethods": true
+  },
+  {
+    "name": "org.apache.catalina.connector.Connector",
+    "allPublicMethods": true
+  }
+]
