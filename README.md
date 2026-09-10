@@ -1,223 +1,390 @@
-# Spring Boot 4 Hello World (GraalVM Native Image)
+# MCQ Question Generator (Spring AI + Redis)
 
-A minimal Spring Boot 4 REST application that is compiled to a GraalVM native
-image and packaged in a tiny Docker container (no JVM needed at runtime), ready
-to deploy to **Vercel** as a container image (Vercel Function).
+A Spring Boot 4 service that generates technical interview MCQs asynchronously
+using **Spring AI** with **OpenRouter** (free models), pushes each generated
+question into a Redis queue (Upstash), and exposes REST endpoints for job
+status and question retrieval.
+
+When you submit a generation job, the API returns a `jobId` immediately and
+runs the AI generation process in the background. As each question is
+produced, it is written into a Redis hash keyed by
+`technology:difficulty:jobTitle`, so all questions for a given combination are
+easy to read back.
+
+---
 
 ## Tech Stack
 
-- **Spring Boot 4.0.8** (Spring Framework 7) — `spring-boot-starter-webmvc`
-- **Java 25** (GraalVM) — native builds require GraalVM 25+ (Spring Boot 4 requirement)
-- **GraalVM Native Image** — milliseconds startup, ~80 MB container image
-- **Docker** — multi-stage build (compile + runtime stages)
-- **Vercel** — deploys the OCI image via `Dockerfile.vercel`
+| Area            | Technology                                                        |
+|-----------------|-------------------------------------------------------------------|
+| Framework       | Spring Boot 4.0.x (Spring Framework 7)                            |
+| AI              | Spring AI 2.0.x + `spring-ai-starter-model-openai`                |
+| AI Provider     | OpenRouter (OpenAI-compatible endpoint) — free models by default  |
+| Cache / Queue   | Redis via `spring-boot-starter-data-redis` (Upstash compatible)   |
+| Language        | Java 21                                                           |
+| Async           | Spring `@Async` + dedicated `ThreadPoolTaskExecutor`              |
 
-## REST Endpoints
+> **Why the OpenAI starter?** OpenRouter exposes an OpenAI-compatible API, so
+> Spring AI talks to it through the OpenAI Chat model with a `base-url`
+> override pointing at `https://openrouter.ai/api`. To change providers later,
+> swap in the matching Spring AI starter and adjust config — no controller
+> changes are required.
 
-| Method | Path      | Description                          |
-|--------|-----------|--------------------------------------|
-| GET    | `/`       | Plain-text info message              |
-| GET    | `/hello`  | JSON greeting, e.g. `{"message":"...", "status":"UP"}` |
+---
 
-The server binds to port `8080` by default, or the `$PORT` environment variable
-when set (used by Vercel, which defaults to port `80`).
+## Architecture
+
+```
+┌──────────────────────┐      POST /api/v1/generate
+│                      │ ────────────────────────────────►  ┌──────────────────────┐
+│     HTTP Client      │      returns { "jobId": "..." }     │   GenerationController │
+│                      │ ◄────────────────────────────────  │   (/api/v1)           │
+└──────────────────────┘                                     └──────────┬───────────┘
+                                                                         │ creates PENDING job hash
+                                                                         │ returns ACCEPTED + jobId
+                                                                         ▼
+                                                              ┌──────────────────────┐
+                                                              │   JobProcessorService │  (@Async)
+                                                              │   - per technology    │
+                                                              │   - update job status │
+                                                              └──────────┬───────────┘
+                                                                         │ for each technology
+                                                                         ▼
+                                                              ┌──────────────────────┐
+                                                              │  McqGeneratorService  │
+                                                              │  - build agent prompt │
+                                                              │  - Spring AI call     │
+                                                              │  - parse JSON array   │
+                                                              └──────────┬───────────┘
+                                                                         │ List<GenerationQuestion>
+                                                                         ▼
+                                                              ┌──────────────────────┐
+                                                              │  RedisQuestionService │
+                                                              │  - HSET question into │
+                                                              │    q:tech:diff:title  │
+                                                              │  - HINCR job counters  │
+                                                              └──────────┬───────────┘
+                                                                         ▼
+                                                              ┌──────────────────────┐
+                                                              │   Redis (Upstash)     │
+                                                              │  job:{jobId}          │
+                                                              │  q:{tech}:{diff}:{title}│
+                                                              └──────────────────────┘
+
+  GET  /api/v1/jobs/{jobId}/status        ◄── reads job:{jobId} hash
+  GET  /api/v1/questions?technology=...   ◄── reads q:{tech}:{diff}:{title} hash
+```
+
+### How generation runs async
+
+1. Client calls `POST /api/v1/generate` with a `GenerationRequest`.
+2. Controller writes a `PENDING` job status hash, then fires
+   `JobProcessorService.processJob(...)` on the `jobTaskExecutor` thread pool
+   and returns `202 Accepted` + `jobId` immediately.
+3. The async processor, for **each technology**, calls the AI and pushes each
+   returned question into Redis as it is produced.
+4. Job status counters (`processed_count`, `failed_count`, `current_stage`)
+   are updated continuously so clients can poll progress.
+5. When all technologies are done, status becomes `COMPLETED`.
+
+---
+
+## Redis Models
+
+Two Redis **hash** structures are used.
+
+### 1. Job tracking hash
+
+```
+Key: job:{jobId}                  e.g. job:batch_3f8a91c2
+
+Field              Type      Example
+--------------------------------------------------------------
+status             string    "PROCESSING" | "PENDING" | "COMPLETED" | "FAILED"
+total_records      int       8
+processed_count    int       4
+failed_count       int       1
+current_stage      string    "GENERATING:Java" | "PUSHED:React" | "DONE"
+started_at         string    "2026-09-09T12:00:00Z"   (ISO-8601 Instant)
+last_updated       string    "2026-09-09T12:05:00Z"
+error              string    "" (or message on failure)
+provider           string    "openrouter"
+model              string    "openrouter/free"
+difficulty         string    "Medium"
+job_title          string    "Senior Engineer"
+```
+
+### 2. Question hash
+
+```
+Key: q:{technology}:{difficulty}:{jobTitle}
+     e.g.  q:Java:Medium:Senior Engineer
+           q:React:Medium:Senior Engineer
+
+Field (questionId)      Value (JSON-serialized GenerationQuestion)
+--------------------------------------------------------------
+java_q_1                { "jobId":"batch_3f8a91c2", "technology":"Java", ... }
+java_q_2                { ... }
+...
+react_q_1               { ... }
+```
+
+`questionId` is **sequential per technology within a job**:
+`{technology lowered & sanitized}_q_{seq}` (e.g. `java_q_1`, `react_q_2`).
+
+> **Note:** Question hashes are **shared** across jobs that use the same
+> `technology:difficulty:jobTitle` combination. Deleting a job only removes the
+> `job:{jobId}` tracking hash; questions are deliberately left in place so other
+> jobs' data is not destroyed.
+
+---
+
+## Java Models
+
+### `GenerationQuestion` — a single generated/parsed MCQ
+
+| Field           | Type            | Description                                                        |
+|-----------------|-----------------|--------------------------------------------------------------------|
+| `jobId`         | `String`        | Owning job id (populated when pushed to Redis)                    |
+| `technology`    | `String`        | e.g. `"Java"`, `"React"`                                           |
+| `area`          | `String`        | Sub-topic, e.g. `"Core Java & OOP"`                                |
+| `question`      | `String`        | The MCQ stem                                                        |
+| `isMultiSelect` | `boolean`       | `true` if "Select ALL that apply"                                  |
+| `options`       | `List<String>`  | Exactly 4 options                                                   |
+| `correctAnswer` | `List<String>`  | The correct option text(s) (derived from `correctIndexes`)         |
+| `explanation`   | `String`        | 1–2 sentence layman-friendly explanation                           |
+| `source`        | `QuestionSource`| `AI_GENERATED` / `MANUAL` / `IMPORTED`                             |
+| `model`         | `String`        | Model id (with provider) that generated the question               |
+| `generatedAt`   | `Instant`       | Timestamp of generation                                            |
+
+### `GenerationRequest` — POST body
+
+| Field                | Type                       | Required | Notes                                        |
+|----------------------|----------------------------|----------|----------------------------------------------|
+| `sessionId`          | `String`                   | no       | Client correlation id                        |
+| `technologies`       | `List<String>`             | **yes**  | E.g. `["Java", "React"]`                     |
+| `difficulty`         | `String`                   | **yes**  | `Easy` / `Medium` / `Hard`                   |
+| `jobTitle`           | `String`                   | **yes**  | E.g. `"Senior Engineer"`                     |
+| `questionsPerTech`   | `Integer`                  | **yes**  | >= 1. Total = technologies × this            |
+| `areasByTechnology`  | `Map<String,List<String>>` | no       | Sub-topics per technology                    |
+| `existingQuestions`  | `List<String>`             | no       | Questions to avoid repeating                 |
+| `provider`           | `String`                   | no       | Optional override, e.g. `"openrouter"`       |
+| `model`              | `String`                   | no       | Optional override, e.g. `"openrouter/free"`  |
+| `temperature`        | `Double`                   | no       | Optional sampling temperature override       |
+
+### `JobStatus` — status read model
+
+Fields match the Redis job hash (`jobId`, `status`, `totalRecords`,
+`processedCount`, `failedCount`, `currentStage`, `startedAt`, `lastUpdated`,
+`error`, `provider`, `model`, `difficulty`, `jobTitle`).
+
+### `QuestionSource` — enum
+
+`AI_GENERATED`, `MANUAL`, `IMPORTED`.
+
+---
+
+## API Details
+
+| Method | Path                                   | Description                                        |
+|--------|----------------------------------------|----------------------------------------------------|
+| POST   | `/api/v1/generate`                      | Start an async generation job → `202` + `jobId`    |
+| GET    | `/api/v1/jobs/{jobId}/status`           | Get job status metadata                            |
+| GET    | `/api/v1/questions`                     | Get questions by `technology`+`difficulty`+`jobTitle` |
+| GET    | `/api/v1/questions/{questionId}`        | Get a single question by its field id              |
+| POST   | `/api/v1/jobs/{jobId}/report`           | Report an issue with a job                         |
+| DELETE | `/api/v1/jobs/{jobId}`                  | Delete a job tracking hash                         |
+
+### POST /api/v1/generate
+
+**Request**
+
+```json
+{
+  "sessionId": "abc123",
+  "technologies": ["Java", "React"],
+  "difficulty": "Medium",
+  "jobTitle": "Senior Engineer",
+  "questionsPerTech": 3,
+  "areasByTechnology": {
+    "Java": ["Core Java & OOP", "Collections & Generics"],
+    "React": ["Hooks", "Rendering & Performance"]
+  },
+  "existingQuestions": ["Which isolation level prevents phantom reads?"],
+  "provider": "openrouter",
+  "model": "openrouter/free",
+  "temperature": 0.7
+}
+```
+
+**Response** — `202 Accepted`
+
+```json
+{ "jobId": "batch_3f8a91c2" }
+```
+
+### GET /api/v1/jobs/{jobId}/status
+
+```json
+{
+  "jobId": "batch_3f8a91c2",
+  "status": "PROCESSING",
+  "totalRecords": 6,
+  "processedCount": 3,
+  "failedCount": 0,
+  "currentStage": "GENERATING:React",
+  "startedAt": "2026-09-09T12:00:00Z",
+  "lastUpdated": "2026-09-09T12:00:12Z",
+  "provider": "openrouter",
+  "model": "openrouter/free",
+  "difficulty": "Medium",
+  "jobTitle": "Senior Engineer"
+}
+```
+
+### GET /api/v1/questions
+
+Query params: `technology`, `difficulty`, `jobTitle`.
+
+```json
+{
+  "java_q_1": "{\"jobId\":\"batch_3f8a91c2\",\"technology\":\"Java\", ...}",
+  "java_q_2": "{\"jobId\":\"batch_3f8a91c2\",\"technology\":\"Java\", ...}"
+}
+```
+
+### POST /api/v1/jobs/{jobId}/report
+
+```json
+{
+  "reason": "duplicate-question",
+  "questionId": "java_q_2",
+  "details": "Option C repeats another question"
+}
+```
+
+---
+
+## Configuration (`application.properties`)
+
+| Property                                     | Env var                 | Default                    |
+|----------------------------------------------|-------------------------|----------------------------|
+| `spring.ai.openai.base-url`                  | `OPENROUTER_BASE_URL`   | `https://openrouter.ai/api`|
+| `spring.ai.openai.api-key`                   | `OPENROUTER_API_KEY`    | *(required)*               |
+| `spring.ai.openai.chat.options.model`        | `MCQ_MODEL`             | `openrouter/free`          |
+| `spring.ai.openai.chat.options.temperature`  | `MCQ_TEMPERATURE`       | `0.7`                      |
+| `mcq.provider`                               | `MCQ_PROVIDER`          | `openrouter`               |
+| `mcq.default-model`                          | `MCQ_MODEL`             | `openrouter/free`          |
+| `mcq.temperature`                            | `MCQ_TEMPERATURE`       | `0.7`                      |
+| `mcq.max-retries`                            | `MCQ_MAX_RETRIES`       | `2`                        |
+| `spring.data.redis.url`                      | `REDIS_URL`             | *(required, Upstash URL)*  |
+| `spring.data.redis.timeout`                  | `REDIS_TIMEOUT_MS`      | `5000`                     |
+| `mcq.redis.ssl`                              | `MCQ_REDIS_SSL`         | `false`                    |
+| `server.port`                                | `PORT`                  | `8080`                     |
+
+### Default model
+
+`openrouter/free` is a **Free Models Router** — OpenRouter picks an available
+free model at runtime based on the request's needs. Because different routed
+models may format output slightly differently, the generator defensively
+strips markdown fences and **retries** (up to `mcq.max-retries`) with a nudged
+prompt if JSON parsing fails.
+
+### Connecting to Upstash Redis (TLS)
+
+Upstash **requires TLS**. A plain `redis://` connection against a TLS-only
+endpoint fails with:
+
+```
+RedisConnectionFailureException: Unable to connect to Redis
+io.lettuce.core.RedisConnectionException: Connection closed prematurely
+```
+
+The app automatically enables TLS when:
+- the `REDIS_URL` uses the **`rediss://`** scheme (recommended), **or**
+- the host ends in **`.upstash.io`**, **or**
+- `mcq.redis.ssl=true` / `MCQ_REDIS_SSL=true` is set.
+
+Use the Upstash **connection string** (from the Redis database page) as your
+`REDIS_URL`, for example:
+
+```bash
+export REDIS_URL="rediss://default:AbCdEf123456@proper-mongoose-34567.upstash.io:6379"
+```
+
+> Note: Upstash also provides a REST API endpoint, but for the Spring app use
+> the TCP **connection string** (`rediss://...`), not the REST URL.
+
+---
+
+## Running
+
+### Prerequisites
+
+- OpenRouter API key (`OPENROUTER_API_KEY`) — from https://openrouter.ai/keys
+- A Redis URL (`REDIS_URL`) — e.g. an Upstash `redis://default:...@...` string
+
+```bash
+export OPENROUTER_API_KEY=sk-or-v1-...
+export REDIS_URL=redis://default:password@host:port
+
+./mvnw spring-boot:run
+```
+
+### Build & test
+
+```bash
+./mvnw compile
+./mvnw test
+```
 
 ---
 
 ## Project Layout
 
 ```
-.
-├── Dockerfile              # Generic GraalVM-native Docker image
-├── Dockerfile.vercel       # Docker image used by Vercel
-├── pom.xml                 # Maven build (Boot 4 + native plugin)
-├── mvnw / mvnw.cmd         # Maven wrapper (Java 21)
-├── .mvn/wrapper/           # Wrapper config
-└── src/
-    ├── main/java/com/example/hello/
-    │   ├── HelloApplication.java   # @SpringBootApplication entry point
-    │   └── HelloController.java    # REST controller (/ and /hello)
-    ├── main/resources/
-    │   └── application.properties  # server.port=${PORT:8080}
-    └── test/java/com/example/hello/
-        ├── HelloApplicationTests.java
-        └── HelloControllerTest.java  # MockMvc tests for / and /hello
+src/main/java/com/example/hello/
+├── HelloApplication.java               # @SpringBootApplication + @EnableAsync
+├── HelloController.java                # legacy / and /hello endpoints
+├── config/
+│   ├── AsyncConfig.java                # jobTaskExecutor thread pool
+│   ├── JacksonConfig.java              # Jackson 2 ObjectMapper bean
+│   └── RedisConfig.java                # TLS-enabled Lettuce connection factory
+├── controller/
+│   └── GenerationController.java       # /api/v1 REST endpoints
+├── model/
+│   ├── GenerateResponse.java
+│   ├── GenerationQuestion.java
+│   ├── GenerationRequest.java
+│   ├── JobReport.java
+│   ├── JobStatus.java
+│   └── QuestionSource.java
+└── service/
+    ├── JobNotFoundException.java
+    ├── JobProcessorService.java        # @Async orchestration
+    ├── McqGeneratorService.java        # Spring AI call + JSON parsing
+    └── RedisQuestionService.java       # job + question hash persistence
+src/main/resources/application.properties
+src/test/java/com/example/hello/
+├── GenerationControllerTest.java       # @WebMvcTest for /api/v1
+├── HelloApplicationTests.java          # context loads (mocked AI/Redis)
+└── HelloControllerTest.java            # legacy endpoint test
+src/test/resources/application.properties  # disables Redis auto-config for tests
 ```
 
 ---
 
-## Prerequisites
+## Notes on Tests
 
-- **JDK 21+** (any distribution works for running tests and the JVM app; GraalVM 25
-  is needed only for native builds)
-- **Docker** 20.10+ (for building images). Give Docker at least **8 GB RAM**
-  and 2+ CPUs — native compilation is memory intensive.
-- **Maven 3.9+** (or use the bundled `./mvnw` wrapper — no install needed)
-- **Vercel CLI** (only for the deploy step): `npm i -g vercel`
+The full Spring context requires a live Redis and an OpenRouter key, so tests
+mock those external dependencies:
 
----
-
-## Run Locally (JVM — fast feedback)
-
-```bash
-# Run tests
-./mvnw test
-
-# Start the app on the JVM (port 8080)
-./mvnw spring-boot:run
-```
-
-Then test:
-
-```bash
-curl http://localhost:8080/hello
-# {"message":"Hello from Spring Boot 4 with GraalVM Native Image!","status":"UP"}
-```
-
-Stop with `Ctrl+C`.
-
----
-
-## Build the GraalVM Native Image
-
-### Option A — Native binary with Docker (recommended)
-
-```bash
-docker build -t hello-app .
-```
-
-This uses a multi-stage Dockerfile:
-1. `ghcr.io/graalvm/native-image-community:25` — compiles the native binary
-2. `debian:bookworm-slim` — minimal runtime (no JVM)
-
-The first build downloads GraalVM + Maven deps and compiles the native image,
-so it takes **10–15 minutes**. Subsequent builds are faster via layer caching.
-
-### Option B — Native binary locally (requires GraalVM 25 installed)
-
-```bash
-./mvnw -Pnative native:compile
-# binary at target/hello
-./target/hello
-```
-
-> GraalVM 25 is required — Spring Boot 4 adds a runtime version check and refuses
-> to start AOT-processed images built with GraalVM 21 or 24.
-
-## Native Image Config Notes
-
-A project-level native reflection config lives at
-`src/main/resources/META-INF/native-image/com.example/hello/reflect-config.json`.
-It registers Tomcat's connector/protocol classes (`AbstractProtocol`,
-`AbstractHttp11Protocol`, `Http11NioProtocol`, `Connector`) with `allPublicMethods`
-because Tomcat's `IntrospectionUtils` reflectively reads/writes connector
-properties during startup; without these hints the native binary fails with
-`MissingReflectionRegistrationError`.
-
----
-
-## Run the Docker Image Locally
-
-```bash
-docker run -p 8080:8080 -e PORT=8080 hello-app
-```
-
-The native app starts in **milliseconds**:
-
-```text
-Started HelloApplication in 0.047 seconds
-```
-
-Test it:
-
-```bash
-curl http://localhost:8080/hello
-```
-
----
-
-## Deploy to Vercel
-
-Vercel detects a `Dockerfile.vercel` (or `Containerfile.vercel`) at the project
-root and deploys the resulting OCI image as a **Vercel Function** (container
-image). Vercel builds the image, pushes it to the Vercel Container Registry
-(VCR), and serves it, auto-scaling to zero when idle.
-
-### Step 1 — Install / login to the Vercel CLI
-
-```bash
-npm i -g vercel
-vercel login
-```
-
-### Step 2 — Deploy
-
-```bash
-# Preview deployment (URL like https://your-app-<hash>.vercel.app)
-vercel
-
-# Production deployment
-vercel --prod
-```
-
-Alternatively, push this repo to GitHub and **Import** it in the Vercel
-dashboard — Vercel auto-detects `Dockerfile.vercel` and deploys it.
-
-### Step 3 — Verify
-
-```bash
-curl https://your-app.vercel.app/hello
-```
-
-Expected response:
-
-```json
-{"message":"Hello from Spring Boot 4 with GraalVM Native Image!","status":"UP"}
-```
-
-### Vercel Notes
-
-- **Stateless only.** Container functions scale to zero and keep nothing between
-  requests. Persist any state in an external service (DB/cache).
-- **Port**: Vercel routes HTTP to port `80` by default, or the `$PORT` env var.
-  `Dockerfile.vercel` starts the app with `-Dserver.port=${PORT:-80}`.
-- **Limits**: Secure Compute and Static IPs are not available for custom
-  container images yet.
-- **Logs** (`stdout`/`stderr`) are broadcast to requests on the instance and
-  visible in the Vercel dashboard.
-
----
-
-## Testing
-
-```bash
-# All tests (JVM)
-./mvnw test
-```
-
-- `HelloApplicationTests` — verifies the Spring context loads.
-- `HelloControllerTest` — uses MockMvc to assert `/` and `/hello` behavior.
-
-For a smoke test against a running instance:
-
-```bash
-# after `./mvnw spring-boot:run` or a docker container
-curl -sf http://localhost:8080/hello | grep -q '"status":"UP"' && echo "OK"
-```
-
-> Note: Spring Boot 4 modularized the servlet web test support. The MockMvc
-> annotations (`@AutoConfigureMockMvc`, `@WebMvcTest`) now live in
-> `org.springframework.boot.webmvc.test.autoconfigure` and require the
-> `spring-boot-starter-webmvc-test` test dependency (already configured in
-> `pom.xml`).
-
----
-
-## Removing the compiled artifacts
-
-```bash
-./mvnw clean
-rm -rf target
-```
-
-The `.gitignore` excludes `target/`, IDE files, and `.vercel/`.
+- `HelloApplicationTests` / `HelloControllerTest` use `@MockitoBean` for
+  `StringRedisTemplate` and `ChatModel`.
+- `src/test/resources/application.properties` excludes the Redis
+  auto-configurations (`DataRedisAutoConfiguration`,
+  `DataRedisReactiveAutoConfiguration`,
+  `DataRedisRepositoriesAutoConfiguration`) so no real connection is attempted —
+  and it sets a dummy OpenAI key/base-url. This keeps the tests green even when
+  `REDIS_URL` / `OPENROUTER_API_KEY` are exported in the environment.
+- `GenerationControllerTest` is a `@WebMvcTest` slice with mocked services.
