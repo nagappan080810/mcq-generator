@@ -30,4 +30,4 @@ COPY --from=builder /build/target/mcq-generator-0.0.1-SNAPSHOT.jar app.jar
 
 USER spring
 
-CMD ["sh", "-c", "java -Dserver.port=${PORT:-80} -jar app.jar"]
+CMD ["sh", "-c", "java -XX:+UseContainerSupport -Xmx480m -Xms256m -XX:MaxMetaspaceSize=256m -Dserver.port=${PORT:-80} -jar app.jar"]
