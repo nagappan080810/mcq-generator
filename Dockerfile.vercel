@@ -8,8 +8,8 @@
 # $PORT environment variable. The app must serve HTTP and be stateless.
 # -----------------------------------------------------------------------------
 
-# ---- Stage 1: compile + build native image with GraalVM ----
-FROM ghcr.io/graalvm/native-image-community:25 AS builder
+# ---- Stage 1: Build with JDK 21 ----
+FROM eclipse-temurin:21-jdk-jammy AS builder
 
 WORKDIR /build
 
@@ -18,16 +18,16 @@ COPY mvnw pom.xml ./
 RUN ./mvnw -q -DskipTests dependency:go-offline || true
 
 COPY src ./src
-RUN ./mvnw -Pnative native:compile -DskipTests
+RUN ./mvnw -q clean package -DskipTests
 
-# ---- Stage 2: minimal runtime - no JVM needed ----
-FROM debian:bookworm-slim
+# ---- Stage 2: Runtime with lightweight JRE ----
+FROM eclipse-temurin:21-jre-jammy
 
 RUN groupadd -r spring && useradd -r -g spring spring
 WORKDIR /app
 
-COPY --from=builder /build/target/hello ./app
+COPY --from=builder /build/target/mcq-generator-0.0.1-SNAPSHOT.jar app.jar
 
-# Vercel sets $PORT (default 80). Do not hardcode a port here.
-# The native app is started with -Dserver.port=$PORT resolved at runtime.
-CMD ["sh", "-c", "./app -Dserver.port=${PORT:-80}"]
+USER spring
+
+CMD ["sh", "-c", "java -Dserver.port=${PORT:-80} -jar app.jar"]
