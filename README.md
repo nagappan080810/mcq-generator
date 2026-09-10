@@ -309,7 +309,7 @@ Use the Upstash **connection string** (from the Redis database page) as your
 `REDIS_URL`, for example:
 
 ```bash
-export REDIS_URL="rediss://default:AbCdEf123456@proper-mongoose-34567.upstash.io:6379"
+export REDIS_URL="redis://default:password@host:port"
 ```
 
 > Note: Upstash also provides a REST API endpoint, but for the Spring app use
