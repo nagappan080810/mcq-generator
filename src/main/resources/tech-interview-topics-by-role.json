@@ -1,0 +1,248 @@
+{
+  "java": {
+    "Core Java & OOP": {
+      "Junior-Developer": ["classes & objects", "inheritance basics", "polymorphism (overloading/overriding)", "encapsulation"],
+      "Mid-level-Developer": ["abstraction via interfaces/abstract classes", "composition vs inheritance", "SOLID principles applied to Java"],
+      "Senior-Developer": ["designing extensible class hierarchies", "immutability patterns", "records vs classes trade-offs"],
+      "Lead": ["reviewing OOP design decisions in PRs", "setting team conventions for composition vs inheritance"],
+      "Architect": ["defining domain model architecture and module boundaries across services"]
+    },
+    "Collections & Generics": {
+      "Junior-Developer": ["List/Set/Map basics", "iterating collections", "basic equality"],
+      "Mid-level-Developer": ["equals()/hashCode() contract", "Collections API (sort, comparators)", "generic methods and bounded types"],
+      "Senior-Developer": ["generic wildcards (? extends/? super)", "type erasure implications", "designing generic APIs"],
+      "Lead": ["establishing collection-usage guidelines for performance-critical paths"],
+      "Architect": ["capacity/memory planning for large-scale collection usage across systems"]
+    },
+    "Concurrency": {
+      "Junior-Developer": ["threads basics", "synchronized keyword", "race conditions overview"],
+      "Mid-level-Developer": ["volatile", "Executors & thread pools", "CompletableFuture basics"],
+      "Senior-Developer": ["thread safety patterns", "ConcurrentHashMap internals", "designing concurrent pipelines"],
+      "Lead": ["reviewing concurrency designs for correctness", "setting thread-pool sizing standards"],
+      "Architect": ["choosing concurrency model across services (thread-per-request vs virtual threads vs reactive)"]
+    },
+    "JVM Internals & Java 21": {
+      "Mid-level-Developer": ["memory model basics (heap/stack)", "GC overview", "records", "streams"],
+      "Senior-Developer": ["sealed types", "pattern matching", "virtual threads", "GC tuning"],
+      "Lead": ["planning migration to Java 21 features across the team"],
+      "Architect": ["org-wide JVM/runtime strategy and version adoption roadmap"]
+    }
+  },
+  "core-dsa": {
+    "Arrays & Strings": {
+      "Junior-Developer": ["basic array traversal", "string manipulation basics", "simple hashing"],
+      "Mid-level-Developer": ["two pointers", "sliding window", "in-place manipulation"],
+      "Senior-Developer": ["string algorithms (KMP, rolling hash)", "optimizing space complexity in array problems"],
+      "Lead": ["evaluating algorithmic approach trade-offs in code review"],
+      "Architect": ["assessing algorithmic complexity implications for system-level data processing"]
+    },
+    "Linked Lists & Trees": {
+      "Junior-Developer": ["traversal", "basic insert/delete"],
+      "Mid-level-Developer": ["reversal", "cycle detection", "BST basics"],
+      "Senior-Developer": ["DFS/BFS on trees", "balanced trees (AVL/Red-Black concepts)"],
+      "Lead": ["guiding design of tree/graph-based data models in features"],
+      "Architect": ["choosing appropriate data structures for large-scale hierarchical data"]
+    },
+    "Graphs & Search": {
+      "Mid-level-Developer": ["DFS", "BFS", "basic topological sort"],
+      "Senior-Developer": ["shortest paths (Dijkstra/Bellman-Ford)", "union-find", "minimum spanning tree"],
+      "Lead": ["reviewing graph-based solution designs for correctness/performance"],
+      "Architect": ["applying graph algorithms to system-level problems (dependency resolution, routing)"]
+    },
+    "Dynamic Programming & Complexity": {
+      "Mid-level-Developer": ["memoization basics", "simple DP patterns", "Big-O analysis"],
+      "Senior-Developer": ["tabulation", "classic DP patterns (knapsack, LIS, edit distance)", "space-optimized DP"],
+      "Lead": ["assessing algorithmic complexity trade-offs in design discussions"],
+      "Architect": ["evaluating computational complexity implications for system scalability"]
+    }
+  },
+  "system-design": {
+    "Scalability & Caching": {
+      "Mid-level-Developer": ["load balancing basics", "stateless vs stateful services", "basic caching"],
+      "Senior-Developer": ["horizontal scaling strategies", "caching layers (write-through/write-back)", "CDN usage"],
+      "Lead": ["reviewing scalability designs for a feature/service"],
+      "Architect": ["designing platform-wide scalability and caching strategy"]
+    },
+    "Data & Storage": {
+      "Mid-level-Developer": ["SQL vs NoSQL basics", "basic replication concepts"],
+      "Senior-Developer": ["sharding strategies", "consistency models", "CAP theorem trade-offs"],
+      "Lead": ["reviewing data storage choices for new services"],
+      "Architect": ["defining org-wide data architecture (polyglot persistence, sharding strategy)"]
+    },
+    "Distributed Systems": {
+      "Senior-Developer": ["message queues", "event streaming basics", "idempotency", "distributed transactions overview"],
+      "Lead": ["coordinating cross-service distributed system designs", "leading incident reviews for distributed failures"],
+      "Architect": ["designing consensus/coordination strategy and distributed transaction patterns platform-wide"]
+    },
+    "Architecture Patterns": {
+      "Mid-level-Developer": ["monolith vs microservices basics", "basic API design"],
+      "Senior-Developer": ["event-driven architecture", "CQRS/Event Sourcing", "back-of-envelope estimation"],
+      "Lead": ["driving architecture decision records for services"],
+      "Architect": ["defining platform-wide architecture patterns and long-term technical strategy"]
+    }
+  },
+  "react": {
+    "Hooks": {
+      "Junior-Developer": ["useState", "useEffect basics", "useContext"],
+      "Mid-level-Developer": ["useMemo/useCallback", "custom hooks", "dependency array pitfalls"],
+      "Senior-Developer": ["React 19 hooks (useActionState, useOptimistic, useFormStatus)", "designing reusable hook APIs"],
+      "Lead": ["establishing shared custom-hook libraries across teams"],
+      "Architect": ["defining platform-level hook/state patterns and React version adoption strategy"]
+    },
+    "Rendering & Performance": {
+      "Mid-level-Developer": ["re-renders basics", "React.memo", "code splitting/lazy loading"],
+      "Senior-Developer": ["reconciliation internals", "Suspense", "concurrent features"],
+      "Lead": ["setting performance budgets and review gates"],
+      "Architect": ["defining platform-wide rendering/performance strategy and monitoring standards"]
+    }
+  },
+  "react-nextjs": {
+    "App Router & Data": {
+      "Mid-level-Developer": ["file-based routing", "layouts", "loading/error boundaries"],
+      "Senior-Developer": ["caching strategies", "advanced data fetching patterns"],
+      "Lead": ["standardizing data-fetching and caching conventions across the app"],
+      "Architect": ["defining the app's rendering/data architecture (ISR, caching layers, edge strategy)"]
+    },
+    "Server Components & Actions": {
+      "Senior-Developer": ["RSC model", "Server Actions", "streaming SSR", "Suspense", "'use client' boundaries"],
+      "Lead": ["reviewing server/client component boundary decisions"],
+      "Architect": ["defining org-wide RSC/Server Actions adoption strategy"]
+    }
+  },
+  "angular": {
+    "Signals & State": {
+      "Mid-level-Developer": ["signal basics", "computed", "effect"],
+      "Senior-Developer": ["input/output with signals", "SignalStore", "signal-based state management design"],
+      "Lead": ["setting signal-based state conventions across feature teams"],
+      "Architect": ["defining platform-wide signals/state architecture"]
+    },
+    "Core Concepts": {
+      "Junior-Developer": ["standalone components basics", "DI basics", "basic forms/routing"],
+      "Mid-level-Developer": ["RxJS interop", "reactive forms", "route guards"],
+      "Senior-Developer": ["advanced DI patterns", "complex routing (lazy loading, resolvers)"],
+      "Lead": ["defining component/module architecture conventions"],
+      "Architect": ["designing multi-app/monorepo Angular platform architecture"]
+    },
+    "Change Detection & Performance": {
+      "Mid-level-Developer": ["OnPush strategy", "trackBy"],
+      "Senior-Developer": ["Zone.js vs zoneless", "@defer", "lazy loading strategy"],
+      "Lead": ["setting performance budgets and review gates"],
+      "Architect": ["defining platform-wide rendering/performance strategy (zoneless adoption, hydration)"]
+    }
+  },
+  "node-backend": {
+    "Node Runtime": {
+      "Junior-Developer": ["event loop basics", "basic async/await", "error handling basics"],
+      "Mid-level-Developer": ["streams", "worker threads", "buffer handling"],
+      "Senior-Developer": ["advanced async patterns", "event loop performance tuning"],
+      "Lead": ["reviewing async/error-handling patterns for reliability"],
+      "Architect": ["defining runtime and performance standards across Node services"]
+    },
+    "APIs & Services": {
+      "Mid-level-Developer": ["REST basics", "validation middleware", "auth middleware"],
+      "Senior-Developer": ["RPC patterns", "rate limiting", "caching", "observability instrumentation"],
+      "Lead": ["defining API design standards and review checklist"],
+      "Architect": ["org-wide API/service architecture strategy (gateway, observability, versioning)"]
+    },
+    "Databases & Queues": {
+      "Mid-level-Developer": ["connection pooling", "basic transactions", "ORM basics"],
+      "Senior-Developer": ["Redis usage patterns", "message queues", "idempotency design"],
+      "Lead": ["reviewing data-access and messaging patterns for scalability"],
+      "Architect": ["designing data/queue architecture across the backend platform"]
+    }
+  },
+  "spring-boot": {
+    "Core & Auto-configuration": {
+      "Junior-Developer": ["DI basics", "beans", "@SpringBootApplication"],
+      "Mid-level-Developer": ["configuration properties", "Actuator", "starters"],
+      "Senior-Developer": ["custom auto-configuration", "conditional beans", "context lifecycle internals"],
+      "Lead": ["establishing shared internal starters/libraries"],
+      "Architect": ["defining configuration/secrets management strategy across services"]
+    },
+    "Data & Messaging": {
+      "Mid-level-Developer": ["Spring Data JPA basics", "transactions"],
+      "Senior-Developer": ["Kafka integration", "outbox pattern", "advanced transaction management"],
+      "Lead": ["reviewing schema/messaging changes for risk"],
+      "Architect": ["designing data/messaging architecture (event-driven, CQRS) across the platform"]
+    },
+    "Cloud & Resilience": {
+      "Senior-Developer": ["Spring Cloud Gateway", "Resilience4j patterns", "distributed tracing/logging", "OAuth2 security"],
+      "Lead": ["driving resilience/incident reviews across services"],
+      "Architect": ["defining platform-wide resilience, gateway, and security architecture"]
+    }
+  },
+  "auth": {
+    "Authentication": {
+      "Junior-Developer": ["sessions vs tokens basics", "basic login flow"],
+      "Mid-level-Developer": ["JWT vs opaque tokens", "OAuth2 flows + PKCE basics"],
+      "Senior-Developer": ["OIDC", "MFA/WebAuthn", "SSO design"],
+      "Lead": ["reviewing authentication designs for security gaps"],
+      "Architect": ["designing platform-wide identity architecture (SSO, token strategy, zero-trust)"]
+    },
+    "Authorization": {
+      "Mid-level-Developer": ["RBAC basics", "claims/scopes"],
+      "Senior-Developer": ["ABAC", "ACL design", "policy engines (OPA/Cedar)"],
+      "Lead": ["reviewing authorization models for new features"],
+      "Architect": ["defining org-wide authorization architecture and policy governance"]
+    }
+  },
+  "design-patterns": {
+    "Creational": {
+      "Junior-Developer": ["Singleton", "Factory basics"],
+      "Mid-level-Developer": ["Abstract Factory", "Builder"],
+      "Senior-Developer": ["Prototype", "choosing creational patterns for complex object graphs"],
+      "Lead": ["reviewing pattern usage for appropriateness in design docs"],
+      "Architect": ["setting architectural guidelines for object-creation strategies across systems"]
+    },
+    "Structural": {
+      "Junior-Developer": ["Adapter basics"],
+      "Mid-level-Developer": ["Decorator", "Facade"],
+      "Senior-Developer": ["Proxy", "Composite", "structural pattern trade-offs at scale"],
+      "Lead": ["guiding structural refactoring decisions using patterns"],
+      "Architect": ["defining structural integration patterns across services/modules"]
+    },
+    "Behavioral": {
+      "Junior-Developer": ["Strategy basics", "Observer basics"],
+      "Mid-level-Developer": ["Command", "State"],
+      "Senior-Developer": ["Template Method", "Chain of Responsibility", "combining behavioral patterns"],
+      "Lead": ["reviewing behavioral pattern choices for maintainability"],
+      "Architect": ["defining behavioral pattern standards for large-scale system design"]
+    }
+  },
+  "twelve-factor": {
+    "Core Factors": {
+      "Junior-Developer": ["codebase basics (one repo, many deploys)", "declaring dependencies"],
+      "Mid-level-Developer": ["config in environment variables", "backing services as attached resources"],
+      "Senior-Developer": ["strict separation of build/release/run stages"],
+      "Lead": ["enforcing twelve-factor compliance in team services"],
+      "Architect": ["defining platform-wide cloud-native application standards"]
+    },
+    "Operations Factors": {
+      "Mid-level-Developer": ["port binding", "basic concurrency via process model"],
+      "Senior-Developer": ["disposability (fast startup/graceful shutdown)", "dev/prod parity", "logs as event streams", "admin processes"],
+      "Lead": ["reviewing operational readiness against twelve-factor principles"],
+      "Architect": ["setting org-wide operational standards for cloud-native deployments"]
+    }
+  },
+  "kubernetes": {
+    "Workloads & Config": {
+      "Junior-Developer": ["Pods basics", "Deployments basics"],
+      "Mid-level-Developer": ["StatefulSets", "ConfigMaps/Secrets", "probes"],
+      "Senior-Developer": ["PodDisruptionBudgets", "resource requests/limits tuning"],
+      "Lead": ["reviewing workload manifests for reliability standards"],
+      "Architect": ["defining org-wide workload configuration and resource governance standards"]
+    },
+    "Networking & Services": {
+      "Mid-level-Developer": ["Services basics", "basic Ingress"],
+      "Senior-Developer": ["Gateway API", "NetworkPolicies", "service mesh", "DNS internals"],
+      "Lead": ["reviewing networking/service exposure designs for security"],
+      "Architect": ["designing platform-wide networking and service mesh architecture"]
+    },
+    "Scaling & Operations": {
+      "Mid-level-Developer": ["HPA basics", "basic RBAC"],
+      "Senior-Developer": ["VPA", "operators", "update strategies", "chaos/self-healing practices"],
+      "Lead": ["driving scaling/operational reviews and incident response for clusters"],
+      "Architect": ["defining org-wide Kubernetes operations, scaling, and reliability strategy"]
+    }
+  }
+}

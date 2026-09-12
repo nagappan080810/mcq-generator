@@ -83,6 +83,7 @@ public class McqGeneratorService {
 
     private final ChatModel chatModel;
     private final ObjectMapper objectMapper;
+    private final TopicCatalogService topicCatalogService;
 
     @Value("${mcq.provider:openrouter}")
     private String defaultProvider;
@@ -93,9 +94,11 @@ public class McqGeneratorService {
     @Value("${mcq.temperature:0.7}")
     private double defaultTemperature;
 
-    public McqGeneratorService(ChatModel chatModel, ObjectMapper objectMapper) {
+    public McqGeneratorService(ChatModel chatModel, ObjectMapper objectMapper,
+                               TopicCatalogService topicCatalogService) {
         this.chatModel = chatModel;
         this.objectMapper = objectMapper;
+        this.topicCatalogService = topicCatalogService;
     }
 
     /**
@@ -126,6 +129,14 @@ public class McqGeneratorService {
             List<String> techAreas = areasByTech.get(technology);
             if (techAreas != null && !techAreas.isEmpty()) {
                 session.put("areasByTechnology", Map.of(technology, techAreas));
+            }
+        }
+        if (!session.containsKey("areasByTechnology")) {
+            List<String> catalogAreas = topicCatalogService.findAreas(technology, request.getJobTitle());
+            if (!catalogAreas.isEmpty()) {
+                session.put("areasByTechnology", Map.of(technology, catalogAreas));
+                log.info("Using catalog areas for technology '{}' and job title '{}': {}",
+                        technology, request.getJobTitle(), catalogAreas);
             }
         }
         

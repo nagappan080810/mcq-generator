@@ -1,0 +1,9 @@
+{
+  "resources": {
+    "includes": [
+      {
+        "pattern": "tech-interview-topics-by-role\\.json"
+      }
+    ]
+  }
+}
