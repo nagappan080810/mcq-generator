@@ -31,11 +31,14 @@ class BatchGenerationSchedulerTest {
     @Mock
     private JobProcessorService jobProcessorService;
 
+    @Mock
+    private RedisQuestionService redisQuestionService;
+
     private BatchGenerationScheduler scheduler;
 
     @BeforeEach
     void setUp() {
-        scheduler = new BatchGenerationScheduler(jobProcessorService);
+        scheduler = new BatchGenerationScheduler(jobProcessorService, redisQuestionService);
         ReflectionTestUtils.setField(scheduler, "jobTitles", JOB_TITLES);
         ReflectionTestUtils.setField(scheduler, "technologies", TECHNOLOGIES);
         ReflectionTestUtils.setField(scheduler, "difficulties", DIFFICULTIES);

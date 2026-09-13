@@ -1,6 +1,8 @@
 package com.example.hello.service;
 
 import com.example.hello.model.GenerationRequest;
+import com.example.hello.model.JobStatus;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,6 +33,8 @@ public class BatchGenerationScheduler {
 
     private final JobProcessorService jobProcessorService;
 
+    private final RedisQuestionService redisQuestionService;
+
     @Value("${mcq.scheduler.enabled:true}")
     private boolean enabled;
 
@@ -49,8 +53,9 @@ public class BatchGenerationScheduler {
     @Value("${mcq.scheduler.difficulties:}")
     private List<String> difficulties;
 
-    public BatchGenerationScheduler(JobProcessorService jobProcessorService) {
+    public BatchGenerationScheduler(JobProcessorService jobProcessorService, RedisQuestionService redisQuestionService) {
         this.jobProcessorService = jobProcessorService;
+        this.redisQuestionService = redisQuestionService;
     }
 
     @Scheduled(initialDelayString = "${mcq.scheduler.initial-delay-ms:60000}",
@@ -59,6 +64,7 @@ public class BatchGenerationScheduler {
         if (!enabled) {
             return;
         }
+        log.info("started scheduler to run every hour for generating questions..");
         List<Combo> combos = buildCombos();
         if (combos.isEmpty()) {
             log.warn("Scheduled sweep has no job title / technology / difficulty combos configured");
@@ -95,6 +101,20 @@ public class BatchGenerationScheduler {
         request.setQuestionsPerTech(questionsPerTech);
 
         String jobId = "sched_" + UUID.randomUUID().toString().substring(0, 8);
+        JobStatus status = new JobStatus();
+        status.setJobId(jobId);
+        status.setStatus(JobStatus.Status.PENDING);
+        status.setCurrentStage("QUEUED");
+        status.setProvider("openrouter");
+        status.setModel("openrouter/free");
+        status.setDifficulty(request.getDifficulty());
+        status.setJobTitle(request.getJobTitle());
+        status.setTotalRecords(request.getTechnologies().size() * request.getQuestionsPerTech());
+        status.setProcessedCount(0);
+        status.setFailedCount(0);
+        status.setStartedAt(java.time.Instant.now());
+        status.setLastUpdated(java.time.Instant.now());
+        redisQuestionService.createJob(status);
         jobProcessorService.processJob(jobId, request);
         log.info("Scheduled job {} queued for {} / {} / {}", jobId,
                 combo.jobTitle(), combo.technology(), combo.difficulty());
