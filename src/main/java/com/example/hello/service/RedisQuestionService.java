@@ -27,9 +27,9 @@ import java.util.stream.Collectors;
  *
  *   Key: {technology}:{difficulty}:{jobTitle}       (question sorted set, NO TTL)
  *        Score: epoch timestamp with milliseconds (numeric, enables ZRANGEBYSCORE)
- *        Member: JSON string with fields:
- *          id, question, options, correctAnswer, correctIndexes,
- *          area, explanation, source, isMultiSelect, model
+*        Member: JSON string with fields:
+   *          id, question, options, correctAnswer, correctIndexes,
+   *          area, explanation, source, isMultiSelect, model, difficulty
  * </pre>
  */
 @Service

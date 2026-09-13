@@ -46,11 +46,11 @@ public class McqGeneratorService {
             You never render a quiz yourself and you never converse beyond the single JSON payload described below.
 
             ## Task
-            - For EVERY technology in `technologies`, generate exactly `questionsPerTech` MCQs.
+            - For EVERY technology in `technologies` and EVERY difficulty in `difficulties`, generate exactly `questionsPerTech` MCQs.
             - Distribute questions across the `areasByTechnology` entries for that technology. If `areasByTechnology` is not provided, choose 2-4 relevant areas for the technology yourself.
-            - Total output = technologies.length * questionsPerTech questions.
-            - Align difficulty to `difficulty` (Easy = fundamentals; Medium = working/intermediate; Hard = advanced boundary facts).
-            - Align depth to `jobTitle` (Junior -> surface; Senior -> deeper reasoning; Architect -> trade-offs/production constraints).
+            - Total output = technologies.length * difficulties.length * questionsPerTech questions.
+            - Give each question a `difficulty` value taken from the `difficulties` array (Easy = fundamentals; Medium = working/intermediate; Hard = advanced boundary facts).
+            - Align depth to `jobTitle` (Junior -> surface; Senior -> deeper reasoning; Architect -> trade-offs/production constraints), with each question's depth also matching its own difficulty.
             - Vary the position of the correct option(s); do not form a repeating pattern.
               For single-select: one correct answer among exactly 4 options.
               For multi-select: exactly 4 options with 2-3 correct options, and label the question clearly: "Select ALL that apply."
@@ -70,6 +70,7 @@ public class McqGeneratorService {
               "options": ["a", "b", "c", "d"],
               "correctAnswer": ["b"],
               "area": "Core Java & OOP",
+              "difficulty": "Medium",
               "explanation": "One or two plain sentences explaining why the correct answer(s) are right."
             }
 
@@ -77,6 +78,8 @@ public class McqGeneratorService {
             - `options` must always be an array of exactly 4 strings.
             - `correctAnswer` must contain the actual correct answer text(s), matching entries in `options`.
               Length 1 -> single-select. Length 2-3 -> multi-select; such questions must contain "Select ALL that apply." in the `question` text.
+            - `difficulty` must be one of the values in the `difficulties` array (e.g. "Easy", "Medium", "Hard").
+              Do not use any difficulty that is not listed in `difficulties`.
             - `explanation` must be 1-2 sentences, layman-friendly but precise.
             - `area` must be one of the areas provided in the session input, or any relevant area of your choosing when none are provided.
             """;
@@ -121,7 +124,8 @@ public class McqGeneratorService {
 
         Map<String, Object> session = new HashMap<>();
         session.put("technologies", List.of(technology));
-        session.put("difficulty", request.getDifficulty());
+        List<String> resolvedDifficulties = request.getResolvedDifficulties();
+        session.put("difficulties", resolvedDifficulties);
         session.put("jobTitle", request.getJobTitle());
         session.put("questionsPerTech", request.getQuestionsPerTech());
         Map<String, List<String>> areasByTech = request.getAreasByTechnology();
@@ -183,7 +187,7 @@ public class McqGeneratorService {
                             "AI returned error or non-array: " + cleaned);
                 }
 
-                List<GenerationQuestion> questions = parsePayload(json, resolvedModel);
+                List<GenerationQuestion> questions = parsePayload(json, resolvedModel, resolvedDifficulties);
                 if (questions.isEmpty()) {
                     if (attempt < maxParseAttempts) {
                         log.warn("AI returned no valid questions for {}, retrying (attempt {}/{})",
@@ -267,7 +271,7 @@ public class McqGeneratorService {
                 (s.length() > 200 ? s.substring(0, 200) : s));
     }
 
-    private List<GenerationQuestion> parsePayload(JsonNode payload, String model) {
+    private List<GenerationQuestion> parsePayload(JsonNode payload, String model, List<String> resolvedDifficulties) {
         List<GenerationQuestion> questions = new ArrayList<>();
         for (JsonNode node : payload) {
             try {
@@ -277,6 +281,15 @@ public class McqGeneratorService {
                 if (q.getQuestion() == null || q.getOptions() == null || q.getOptions().size() != 4) {
                     log.warn("Skipping malformed question element: {}", node);
                     continue;
+                }
+                if (q.getDifficulty() == null || q.getDifficulty().isBlank()) {
+                    if (resolvedDifficulties.size() == 1) {
+                        q.setDifficulty(resolvedDifficulties.get(0));
+                    } else {
+                        log.warn("Skipping question without a difficulty (requested {} difficulties): {}",
+                                resolvedDifficulties, node);
+                        continue;
+                    }
                 }
                 questions.add(q);
             } catch (JsonProcessingException e) {

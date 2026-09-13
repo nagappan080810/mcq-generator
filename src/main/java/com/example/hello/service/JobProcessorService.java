@@ -36,7 +36,9 @@ public class JobProcessorService {
         status.setCurrentStage("INITIALIZING");
         redisService.updateJob(status);
 
-        int totalQuestions = request.getTechnologies().size() * request.getQuestionsPerTech();
+        int totalQuestions = request.getTechnologies().size()
+                * request.getResolvedDifficulties().size()
+                * request.getQuestionsPerTech();
         status.setTotalRecords(totalQuestions);
 
         int processed = 0;
@@ -54,7 +56,7 @@ public class JobProcessorService {
                     for (GenerationQuestion q : generated) {
                         redisService.pushQuestion(
                                 technology, q, jobId,
-                                request.getJobTitle(), request.getDifficulty());
+                                request.getJobTitle(), difficultyOf(q, request));
                     }
                     processed += generated.size();
                     status.setProcessedCount(processed);
@@ -82,5 +84,13 @@ public class JobProcessorService {
             status.setCurrentStage("FAILED");
             redisService.updateJob(status);
         }
+    }
+
+    private static String difficultyOf(GenerationQuestion q, GenerationRequest request) {
+        if (q.getDifficulty() != null && !q.getDifficulty().isBlank()) {
+            return q.getDifficulty();
+        }
+        List<String> resolved = request.getResolvedDifficulties();
+        return resolved.size() == 1 ? resolved.get(0) : "Medium";
     }
 }

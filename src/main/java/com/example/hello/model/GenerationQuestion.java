@@ -9,7 +9,7 @@ import java.util.List;
  * A single generated MCQ question. This is the unit that gets pushed to the
  * Redis question hash and served back to the client.
  *
- * <p>Stored in Redis as sorted set member (JSON string): {@code {id, question, options, correctAnswer, correctIndexes, area, explanation, source, isMultiSelect, model}}</p>
+ * <p>Stored in Redis as sorted set member (JSON string): {@code {id, question, options, correctAnswer, correctIndexes, area, explanation, source, isMultiSelect, model, difficulty}}</p>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -25,6 +25,7 @@ public class GenerationQuestion {
     private String explanation;
     private QuestionSource source;
     private String model;
+    private String difficulty;
 
     public String getId() {
         return id;
@@ -104,5 +105,13 @@ public class GenerationQuestion {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public String getDifficulty() {
+        return difficulty;
+    }
+
+    public void setDifficulty(String difficulty) {
+        this.difficulty = difficulty;
     }
 }

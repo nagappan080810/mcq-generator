@@ -9,27 +9,23 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * Hourly background scheduler that regenerates questions for the full
- * matrix of job titles x technologies x difficulties.
+ * Hourly background scheduler that regenerates questions for the full set of
+ * job titles.
  *
- * <p>Instead of regenerating everything every hour (180 AI calls/tick), it runs
- * every hour but only regenerates a deterministic slice of the matrix: the full
- * set of combos is covered exactly once per day. Each combo produces
- * {@code mcq.scheduler.questions-per-tech} questions and is dispatched as its own
- * async job, reusing {@link JobProcessorService} (retries, circuit breaker, Redis
- * push, per-combo failure isolation).</p>
+ * <p>For each job title one async job is dispatched carrying ALL technologies
+ * and ALL difficulties, so the difficulty axis lives inside the request (the AI
+ * labels each generated question) instead of being expanded into scheduler
+ * combos. Each job reuses {@link JobProcessorService} (retries, circuit breaker,
+ * Redis push, per-job failure isolation).</p>
  */
 @Service
 public class BatchGenerationScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(BatchGenerationScheduler.class);
-
-    private static final long HOUR_MS = 3_600_000L;
 
     private final JobProcessorService jobProcessorService;
 
@@ -37,9 +33,6 @@ public class BatchGenerationScheduler {
 
     @Value("${mcq.scheduler.enabled:true}")
     private boolean enabled;
-
-    @Value("${mcq.scheduler.daily-slices:24}")
-    private int dailySlices;
 
     @Value("${mcq.scheduler.questions-per-tech:10}")
     private int questionsPerTech;
@@ -64,40 +57,22 @@ public class BatchGenerationScheduler {
         if (!enabled) {
             return;
         }
-        log.info("started scheduler to run every hour for generating questions..");
-        List<Combo> combos = buildCombos();
-        if (combos.isEmpty()) {
-            log.warn("Scheduled sweep has no job title / technology / difficulty combos configured");
+        if (jobTitles.isEmpty() || technologies.isEmpty() || difficulties.isEmpty()) {
+            log.warn("Scheduled sweep has no job titles / technologies / difficulties configured");
             return;
         }
-        int slices = Math.max(1, dailySlices);
-        long hourIndex = System.currentTimeMillis() / HOUR_MS;
-        int runIndex = (int) (hourIndex % slices);
-        runSlice(runIndex, combos, slices);
-    }
-
-    /**
-     * Dispatches the deterministic slice of the combo matrix for a given run index.
-     * Slice boundaries are chosen so that across {@code slices} consecutive runs
-     * every combo is covered exactly once, with no gaps or overlaps.
-     */
-    protected void runSlice(int runIndex, List<Combo> combos, int slices) {
-        int start = runIndex * combos.size() / slices;
-        int end = (runIndex + 1) * combos.size() / slices;
-        List<Combo> slice = combos.subList(start, end);
-
-        log.info("Scheduled sweep: run {} of {} handling {} of {} combos (questions/tech={})",
-                runIndex + 1, slices, slice.size(), combos.size(), questionsPerTech);
-        for (Combo combo : slice) {
-            dispatch(combo);
+        log.info("Started scheduler sweep over {} job titles (all technologies x difficulties bundled)",
+                jobTitles.size());
+        for (String jobTitle : jobTitles) {
+            dispatch(jobTitle);
         }
     }
 
-    private void dispatch(Combo combo) {
+    private void dispatch(String jobTitle) {
         GenerationRequest request = new GenerationRequest();
-        request.setTechnologies(List.of(combo.technology()));
-        request.setJobTitle(combo.jobTitle());
-        request.setDifficulty(combo.difficulty());
+        request.setTechnologies(technologies);
+        request.setDifficulties(difficulties);
+        request.setJobTitle(jobTitle);
         request.setQuestionsPerTech(questionsPerTech);
 
         String jobId = "sched_" + UUID.randomUUID().toString().substring(0, 8);
@@ -107,35 +82,16 @@ public class BatchGenerationScheduler {
         status.setCurrentStage("QUEUED");
         status.setProvider("openrouter");
         status.setModel("openrouter/free");
-        status.setDifficulty(request.getDifficulty());
-        status.setJobTitle(request.getJobTitle());
-        status.setTotalRecords(request.getTechnologies().size() * request.getQuestionsPerTech());
+        status.setDifficulty(String.join(", ", difficulties));
+        status.setJobTitle(jobTitle);
+        status.setTotalRecords(technologies.size() * difficulties.size() * questionsPerTech);
         status.setProcessedCount(0);
         status.setFailedCount(0);
         status.setStartedAt(java.time.Instant.now());
         status.setLastUpdated(java.time.Instant.now());
         redisQuestionService.createJob(status);
         jobProcessorService.processJob(jobId, request);
-        log.info("Scheduled job {} queued for {} / {} / {}", jobId,
-                combo.jobTitle(), combo.technology(), combo.difficulty());
-    }
-
-    /**
-     * Builds the combination matrix in job title -> technology -> difficulty order.
-     */
-    protected List<Combo> buildCombos() {
-        List<Combo> combos = new ArrayList<>();
-        for (String jobTitle : jobTitles) {
-            for (String technology : technologies) {
-                for (String difficulty : difficulties) {
-                    combos.add(new Combo(jobTitle, technology, difficulty));
-                }
-            }
-        }
-        return combos;
-    }
-
-    /** A single (jobTitle, technology, difficulty) generation unit. */
-    protected record Combo(String jobTitle, String technology, String difficulty) {
+        log.info("Scheduled job {} queued for {} ({} technologies, {} difficulties)",
+                jobId, jobTitle, technologies.size(), difficulties.size());
     }
 }

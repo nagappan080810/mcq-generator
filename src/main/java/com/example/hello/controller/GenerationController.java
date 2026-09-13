@@ -66,9 +66,11 @@ public class GenerationController {
         status.setLastUpdated(Instant.now());
         status.setProvider(request.getProvider() != null ? request.getProvider() : "openrouter");
         status.setModel(request.getModel() != null ? request.getModel() : "openrouter/free");
-        status.setDifficulty(request.getDifficulty());
+        status.setDifficulty(String.join(", ", request.getResolvedDifficulties()));
         status.setJobTitle(request.getJobTitle());
-        status.setTotalRecords(request.getTechnologies().size() * request.getQuestionsPerTech());
+        status.setTotalRecords(request.getTechnologies().size()
+                * request.getResolvedDifficulties().size()
+                * request.getQuestionsPerTech());
         redisService.createJob(status);
 
         // Fire-and-forget async processing

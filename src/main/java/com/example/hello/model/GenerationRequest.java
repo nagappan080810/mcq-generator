@@ -1,5 +1,6 @@
 package com.example.hello.model;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -25,8 +26,11 @@ public class GenerationRequest {
     @NotEmpty
     private List<@NotBlank String> technologies;
 
-    @NotBlank
+    /** Optional single difficulty (e.g. "Easy"). Kept for backward compatibility. */
     private String difficulty;
+
+    /** Optional list of difficulties (e.g. ["Easy", "Medium", "Hard"]) to generate across in one call. */
+    private List<@NotBlank String> difficulties;
 
     @NotBlank
     private String jobTitle;
@@ -70,6 +74,34 @@ public class GenerationRequest {
 
     public void setDifficulty(String difficulty) {
         this.difficulty = difficulty;
+    }
+
+    public List<String> getDifficulties() {
+        return difficulties;
+    }
+
+    public void setDifficulties(List<String> difficulties) {
+        this.difficulties = difficulties;
+    }
+
+    /**
+     * Resolve the effective difficulty set for generation: the {@code difficulties}
+     * list when provided, otherwise the single {@code difficulty} value.
+     */
+    public List<String> getResolvedDifficulties() {
+        if (difficulties != null && !difficulties.isEmpty()) {
+            return difficulties;
+        }
+        if (difficulty != null && !difficulty.isBlank()) {
+            return List.of(difficulty);
+        }
+        return List.of();
+    }
+
+    /** At least one of {@code difficulty} or {@code difficulties} must be provided. */
+    @AssertTrue(message = "either difficulty or difficulties must be provided")
+    public boolean isDifficultySpecified() {
+        return !getResolvedDifficulties().isEmpty();
     }
 
     public String getJobTitle() {
