@@ -9,11 +9,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -42,58 +42,29 @@ class BatchGenerationSchedulerTest {
         ReflectionTestUtils.setField(scheduler, "jobTitles", JOB_TITLES);
         ReflectionTestUtils.setField(scheduler, "technologies", TECHNOLOGIES);
         ReflectionTestUtils.setField(scheduler, "difficulties", DIFFICULTIES);
-        ReflectionTestUtils.setField(scheduler, "dailySlices", 24);
         ReflectionTestUtils.setField(scheduler, "questionsPerTech", 10);
+        ReflectionTestUtils.setField(scheduler, "enabled", true);
     }
 
     @Test
-    void buildCombosReturnsFullMatrixInRoleFirstOrder() {
-        List<BatchGenerationScheduler.Combo> combos = scheduler.buildCombos();
-        assertThat(combos).hasSize(5 * 12 * 3);
-        assertThat(combos.get(0).jobTitle()).isEqualTo("Junior-Developer");
-        assertThat(combos.get(0).technology()).isEqualTo("java");
-        assertThat(combos.get(0).difficulty()).isEqualTo("Easy");
-        assertThat(combos.get(combos.size() - 1).jobTitle()).isEqualTo("Architect");
-        assertThat(combos.get(combos.size() - 1).difficulty()).isEqualTo("Hard");
-    }
-
-    @Test
-    void dailySlicesCoverEveryComboExactlyOnce() {
-        List<BatchGenerationScheduler.Combo> combos = scheduler.buildCombos();
-        Map<String, Integer> dispatchCount = new HashMap<>();
-        org.mockito.stubbing.Answer<Void> record = invocation -> {
-            GenerationRequest request = invocation.getArgument(1);
-            dispatchCount.merge(
-                    request.getJobTitle() + "|" + request.getTechnologies().get(0) + "|" + request.getDifficulty(),
-                    1, Integer::sum);
-            return null;
-        };
-        org.mockito.Mockito.doAnswer(record).when(jobProcessorService).processJob(
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.any(GenerationRequest.class));
-
-        for (int run = 0; run < 24; run++) {
-            scheduler.runSlice(run, combos, 24);
-        }
-
-        assertThat(dispatchCount).hasSize(combos.size());
-        assertThat(dispatchCount.values()).allMatch(count -> count == 1);
-    }
-
-    @Test
-    void dispatchedRequestIsConfiguredCorrectly() {
+    void dispatchesOneJobPerJobTitleWithAllTechnologiesAndDifficulties() {
         ArgumentCaptor<GenerationRequest> requestCaptor =
                 ArgumentCaptor.forClass(GenerationRequest.class);
 
-        scheduler.runSlice(0, scheduler.buildCombos(), 24);
+        scheduler.run();
 
-        verify(jobProcessorService, times(7)).processJob(
-                org.mockito.ArgumentMatchers.anyString(), requestCaptor.capture());
-        GenerationRequest request = requestCaptor.getAllValues().get(0);
-        assertThat(request.getTechnologies()).containsExactly("java");
-        assertThat(request.getJobTitle()).isEqualTo("Junior-Developer");
-        assertThat(request.getDifficulty()).isEqualTo("Easy");
-        assertThat(request.getQuestionsPerTech()).isEqualTo(10);
+        verify(jobProcessorService, times(JOB_TITLES.size())).processJob(anyString(), requestCaptor.capture());
+
+        List<GenerationRequest> requests = requestCaptor.getAllValues();
+        assertThat(requests).hasSize(JOB_TITLES.size());
+        assertThat(requests)
+                .extracting(GenerationRequest::getJobTitle)
+                .containsExactlyInAnyOrderElementsOf(JOB_TITLES);
+        for (GenerationRequest request : requests) {
+            assertThat(request.getTechnologies()).containsExactlyElementsOf(TECHNOLOGIES);
+            assertThat(request.getDifficulties()).isEqualTo(DIFFICULTIES);
+            assertThat(request.getQuestionsPerTech()).isEqualTo(10);
+        }
     }
 
     @Test
@@ -102,8 +73,15 @@ class BatchGenerationSchedulerTest {
 
         scheduler.run();
 
-        verify(jobProcessorService, never()).processJob(
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.any(GenerationRequest.class));
+        verify(jobProcessorService, never()).processJob(anyString(), any(GenerationRequest.class));
+    }
+
+    @Test
+    void runDoesNothingWhenListsAreEmpty() {
+        ReflectionTestUtils.setField(scheduler, "jobTitles", List.of());
+
+        scheduler.run();
+
+        verify(jobProcessorService, never()).processJob(anyString(), any(GenerationRequest.class));
     }
 }

@@ -44,7 +44,7 @@ class GenerationControllerTest {
     void generateReturnsAcceptedWithJobId() throws Exception {
         GenerationRequest body = new GenerationRequest();
         body.setTechnologies(List.of("Java"));
-        body.setDifficulty("Medium");
+        body.setDifficulties(List.of("Easy", "Medium", "Hard"));
         body.setJobTitle("Senior Engineer");
         body.setQuestionsPerTech(2);
 
