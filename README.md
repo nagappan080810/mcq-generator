@@ -340,9 +340,132 @@ export REDIS_URL=redis://default:password@host:port
 
 ---
 
+## SnapDeploy Deployment (Free Tier)
+
+Deploy the MCQ Generator with an Ollama sidecar on [SnapDeploy](https://snapdeploy.dev) free tier (512MB RAM, 4 containers, auto-sleep).
+
+### Architecture
+
+```
+SnapDeploy Container 1: ollama-api          SnapDeploy Container 2: mcq-api
+┌──────────────────────────────┐             ┌──────────────────────────────┐
+│  Dockerfile.ollama           │             │  Dockerfile.snapdeploy       │
+│  ollama/ollama:latest        │  HTTP calls │  Spring Boot (JVM 21)       │
+│  + qwen2.5:0.5b model       │◄────────────│  -Xmx380m                   │
+│  Port: 11434                 │             │  Port: 8080                 │
+└──────────────────────────────┘             └──────────────────────────────┘
+         ↑                                              ↑
+    OpenAI-compatible API              Spring AI (OpenAI starter)
+    /v1/chat/completions               OPENROUTER_BASE_URL → ollama-api URL
+```
+
+### Prerequisites
+
+1. A [SnapDeploy account](https://snapdeploy.dev/register) (free)
+2. GitHub connected to SnapDeploy ([Settings > GitHub Integration](https://snapdeploy.dev/docs/github))
+3. This repository pushed to GitHub
+4. A Redis instance (e.g. [Upstash](https://upstash.com) free tier)
+
+### Step 1 — Deploy the Ollama sidecar
+
+1. Go to SnapDeploy Dashboard → **New Container**
+2. Choose **Deploy from GitHub** → select this repository → branch `main`
+3. Configure:
+
+| Setting         | Value                                                      |
+|-----------------|------------------------------------------------------------|
+| **Name**        | `ollama-api`                                               |
+| **Dockerfile**  | `Dockerfile.ollama` (set via env or SnapDeploy config)     |
+| **Port**        | `11434`                                                    |
+
+4. Environment variables:
+
+| Variable       | Value              |
+|----------------|--------------------|
+| `OLLAMA_MODEL` | `qwen2.5:0.5b`    |
+
+5. Click **Deploy**. Wait for build to complete (~1-2 min).
+
+6. Note the container URL: `https://ollama-api.containers.snapdeploy.app`
+
+### Step 2 — Deploy the MCQ Generator app
+
+1. Go to SnapDeploy Dashboard → **New Container**
+2. Choose **Deploy from GitHub** → same repository → branch `main`
+3. Configure:
+
+| Setting         | Value                                                        |
+|-----------------|--------------------------------------------------------------|
+| **Name**        | `mcq-api`                                                    |
+| **Dockerfile**  | `Dockerfile.snapdeploy` (set via env or SnapDeploy config)   |
+| **Port**        | `8080`                                                       |
+
+4. Environment variables:
+
+| Variable              | Value                                                   |
+|-----------------------|---------------------------------------------------------|
+| `OPENROUTER_BASE_URL` | `https://ollama-api.containers.snapdeploy.app`          |
+| `MCQ_MODEL`           | `qwen2.5:0.5b`                                          |
+| `MCQ_PROVIDER`        | `ollama`                                                |
+| `REDIS_URL`           | `redis://default:password@host:port` (your Upstash URL) |
+
+5. Click **Deploy**.
+
+### Step 3 — Verify
+
+```bash
+# Check Ollama is running and model is loaded
+curl https://ollama-api.containers.snapdeploy.app/api/tags
+
+# Check the app is running
+curl https://mcq-api.containers.snapdeploy.app/hello
+
+# Generate questions
+curl -X POST https://mcq-api.containers.snapdeploy.app/api/v1/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "technologies": ["Java"],
+    "difficulty": "Easy",
+    "jobTitle": "Junior Developer",
+    "questionsPerTech": 2
+  }'
+```
+
+### Local Development (Docker Compose)
+
+For local testing without SnapDeploy:
+
+```bash
+export REDIS_URL=redis://default:password@host:port
+docker compose -f docker-compose.ollama.yml up --build
+```
+
+This starts both Ollama and the app on a shared Docker network. The app
+communicates with Ollama via `http://ollama:11434` (Docker service name).
+
+### Free Tier Limitations
+
+| Limitation              | Impact                                                       |
+|-------------------------|--------------------------------------------------------------|
+| **512MB RAM**           | Only `qwen2.5:0.5b` fits; larger models require paid tier   |
+| **No GPU**              | CPU-only inference: 10-30s per question generation           |
+| **No persistent storage** | Model re-downloads on every container restart/wake          |
+| **Auto-sleep**          | Containers sleep after idle; wake takes ~60s + model pull    |
+| **No private networking** | Inter-container calls go over public HTTPS                 |
+
+For production use, consider [OpenRouter](https://openrouter.ai) (free models available) instead of the Ollama sidecar.
+
+---
+
 ## Project Layout
 
 ```
+Dockerfile                          # GraalVM native image (production)
+Dockerfile.vercel                   # Vercel container deployment
+Dockerfile.ollama                   # Ollama sidecar + Qwen model
+Dockerfile.snapdeploy               # App optimized for SnapDeploy free tier (512MB)
+docker-compose.ollama.yml           # Local dev: Ollama + app stack
+entrypoint-ollama.sh                # Ollama startup + model pull script
 src/main/java/com/example/hello/
 ├── HelloApplication.java               # @SpringBootApplication + @EnableAsync
 ├── HelloController.java                # legacy / and /hello endpoints
