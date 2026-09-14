@@ -380,9 +380,18 @@ SnapDeploy Container 1: ollama-api          SnapDeploy Container 2: mcq-api
 
 4. Environment variables:
 
-| Variable       | Value              |
-|----------------|--------------------|
-| `OLLAMA_MODEL` | `qwen2.5:0.5b`    |
+| Variable                     | Value              |
+|------------------------------|--------------------|
+| `OLLAMA_MODEL`               | `qwen2.5:0.5b`    |
+| `OLLAMA_CONTEXT_LENGTH`      | `4096`             |
+| `OLLAMA_KV_CACHE_TYPE`       | `q8_0`             |
+| `OLLAMA_FLASH_ATTENTION`     | `1`                |
+
+> The memory-tuning vars (`OLLAMA_CONTEXT_LENGTH`, `OLLAMA_KV_CACHE_TYPE`,
+> `OLLAMA_FLASH_ATTENTION`) are required on the 512MB free tier: `qwen2.5`
+> declares a 32K default context whose KV cache alone OOM-kills the container on
+> the first real inference. These caps keep the model load under 512MB. Without
+> them you'll see `500: llama-server process has terminated: signal: killed`.
 
 5. Click **Deploy**. Wait for build to complete (~1-2 min).
 
@@ -404,10 +413,14 @@ SnapDeploy Container 1: ollama-api          SnapDeploy Container 2: mcq-api
 
 | Variable              | Value                                                   |
 |-----------------------|---------------------------------------------------------|
-| `OPENROUTER_BASE_URL` | `https://ollama-api.containers.snapdeploy.app`          |
+| `OPENROUTER_BASE_URL` | `https://ollama-api.containers.snapdeploy.app/v1`       |
+| `OPENROUTER_API_KEY`  | `ollama` (dummy — ignored by Ollama, required by SDK)   |
 | `MCQ_MODEL`           | `qwen2.5:0.5b`                                          |
 | `MCQ_PROVIDER`        | `ollama`                                                |
 | `REDIS_URL`           | `redis://default:password@host:port` (your Upstash URL) |
+
+> The trailing `/v1` on `OPENROUTER_BASE_URL` is required — that's where
+> Ollama's OpenAI-compatible endpoint (`/v1/chat/completions`) lives.
 
 5. Click **Deploy**.
 
@@ -452,6 +465,12 @@ communicates with Ollama via `http://ollama:11434` (Docker service name).
 | **No persistent storage** | Model re-downloads on every container restart/wake          |
 | **Auto-sleep**          | Containers sleep after idle; wake takes ~60s + model pull    |
 | **No private networking** | Inter-container calls go over public HTTPS                 |
+
+> The 512MB tier OOM-kills the model on first inference unless the context is
+> capped (`OLLAMA_CONTEXT_LENGTH=4096` + `OLLAMA_KV_CACHE_TYPE=q8_0`), because
+> `qwen2.5` defaults to a 32K context. Symptoms: the Ollama container passes
+> `/api/tags` healthchecks but returns
+> `500: llama-server process has terminated: signal: killed` on generation.
 
 For production use, consider [OpenRouter](https://openrouter.ai) (free models available) instead of the Ollama sidecar.
 

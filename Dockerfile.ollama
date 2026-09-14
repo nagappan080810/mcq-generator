@@ -16,6 +16,11 @@ ENV OLLAMA_KEEP_ALIVE=5m
 ENV OLLAMA_NUM_PARALLEL=1
 ENV OLLAMA_MAX_LOADED_MODELS=1
 ENV OLLAMA_MODEL=qwen2.5:0.5b
+# Free-tier memory tuning (512MB): qwen2.5 declares a 32K default context whose
+# KV cache alone OOM-kills the container. Cap the context and shrink KV cache.
+ENV OLLAMA_CONTEXT_LENGTH=4096
+ENV OLLAMA_KV_CACHE_TYPE=q8_0
+ENV OLLAMA_FLASH_ATTENTION=1
 
 COPY entrypoint-ollama.sh /entrypoint-ollama.sh
 RUN chmod +x /entrypoint-ollama.sh
@@ -23,6 +28,6 @@ RUN chmod +x /entrypoint-ollama.sh
 EXPOSE 11434
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=120s \
-  CMD curl -sf http://localhost:11434/api/tags || exit 1
+  CMD ollama list > /dev/null 2>&1 || exit 1
 
 ENTRYPOINT ["/entrypoint-ollama.sh"]
