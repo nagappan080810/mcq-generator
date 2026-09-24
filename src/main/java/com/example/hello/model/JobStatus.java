@@ -25,6 +25,7 @@ public class JobStatus {
     private int totalRecords;
     private int processedCount;
     private int failedCount;
+    private int duplicateCount;
     private String currentStage;
     private Instant startedAt;
     private Instant lastUpdated;
@@ -72,6 +73,14 @@ public class JobStatus {
 
     public void setFailedCount(int failedCount) {
         this.failedCount = failedCount;
+    }
+
+    public int getDuplicateCount() {
+        return duplicateCount;
+    }
+
+    public void setDuplicateCount(int duplicateCount) {
+        this.duplicateCount = duplicateCount;
     }
 
     public String getCurrentStage() {
@@ -149,6 +158,7 @@ public class JobStatus {
         status.setTotalRecords(intOf(hash.get("total_records")));
         status.setProcessedCount(intOf(hash.get("processed_count")));
         status.setFailedCount(intOf(hash.get("failed_count")));
+        status.setDuplicateCount(intOf(hash.get("duplicate_count")));
         status.setCurrentStage(str(hash.get("current_stage")));
         status.setStartedAt(instantOf(hash.get("started_at")));
         status.setLastUpdated(instantOf(hash.get("last_updated")));
@@ -168,6 +178,7 @@ public class JobStatus {
                 Map.entry("total_records", String.valueOf(totalRecords)),
                 Map.entry("processed_count", String.valueOf(processedCount)),
                 Map.entry("failed_count", String.valueOf(failedCount)),
+                Map.entry("duplicate_count", String.valueOf(duplicateCount)),
                 Map.entry("current_stage", currentStage == null ? "" : currentStage),
                 Map.entry("started_at", startedAt == null ? "" : startedAt.toString()),
                 Map.entry("last_updated", lastUpdated == null ? "" : lastUpdated.toString()),

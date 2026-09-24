@@ -43,6 +43,7 @@ public class JobProcessorService {
 
         int processed = 0;
         int failed = 0;
+        int duplicates = 0;
 
         try {
             for (String technology : request.getTechnologies()) {
@@ -53,13 +54,22 @@ public class JobProcessorService {
                     List<GenerationQuestion> generated =
                             mcqGeneratorService.generateForTechnology(request, technology);
 
-                    for (GenerationQuestion q : generated) {
-                        redisService.pushQuestion(
-                                technology, q, jobId,
-                                request.getJobTitle(), difficultyOf(q, request));
+                    for (String difficulty : distinctDifficulties(generated, request)) {
+                        redisService.ensureQuestionDedupSeeded(
+                                technology, request.getJobTitle(), difficulty);
                     }
-                    processed += generated.size();
+
+                    for (GenerationQuestion q : generated) {
+                        if (redisService.pushQuestion(
+                                technology, q, jobId,
+                                request.getJobTitle(), difficultyOf(q, request))) {
+                            processed++;
+                        } else {
+                            duplicates++;
+                        }
+                    }
                     status.setProcessedCount(processed);
+                    status.setDuplicateCount(duplicates);
                     status.setCurrentStage("PUSHED:" + technology);
                     redisService.updateJob(status);
                 } catch (Exception e) {
@@ -74,6 +84,7 @@ public class JobProcessorService {
 
             status.setProcessedCount(processed);
             status.setFailedCount(failed);
+            status.setDuplicateCount(duplicates);
             status.setStatus(failed == 0 ? JobStatus.Status.COMPLETED : JobStatus.Status.PARTIAL);
             status.setCurrentStage("DONE");
             redisService.updateJob(status);
@@ -84,6 +95,14 @@ public class JobProcessorService {
             status.setCurrentStage("FAILED");
             redisService.updateJob(status);
         }
+    }
+
+    private static List<String> distinctDifficulties(List<GenerationQuestion> questions,
+                                                     GenerationRequest request) {
+        return questions.stream()
+                .map(q -> difficultyOf(q, request))
+                .distinct()
+                .toList();
     }
 
     private static String difficultyOf(GenerationQuestion q, GenerationRequest request) {

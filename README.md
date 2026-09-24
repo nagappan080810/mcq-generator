@@ -82,16 +82,19 @@ easy to read back.
    `JobProcessorService.processJob(...)` on the `jobTaskExecutor` thread pool
    and returns `202 Accepted` + `jobId` immediately.
 3. The async processor, for **each technology**, calls the AI and pushes each
-   returned question into Redis as it is produced.
-4. Job status counters (`processed_count`, `failed_count`, `current_stage`)
-   are updated continuously so clients can poll progress.
+   returned question into Redis as it is produced — skipping and counting
+   questions whose **fingerprint** (normalized stem + sorted choices) already
+   exists in the dedup set.
+4. Job status counters (`processed_count`, `failed_count`, `duplicate_count`,
+   `current_stage`) are updated continuously so clients can poll progress.
 5. When all technologies are done, status becomes `COMPLETED`.
 
 ---
 
 ## Redis Models
 
-Two Redis **hash** structures are used.
+Three Redis structures are used: the job tracking **hash**, the question
+**sorted set**, and the question **dedup set**.
 
 ### 1. Job tracking hash
 
@@ -104,6 +107,7 @@ status             string    "PROCESSING" | "PENDING" | "COMPLETED" | "FAILED"
 total_records      int       8
 processed_count    int       4
 failed_count       int       1
+duplicate_count    int       0
 current_stage      string    "GENERATING:Java" | "PUSHED:React" | "DONE"
 started_at         string    "2026-09-09T12:00:00Z"   (ISO-8601 Instant)
 last_updated       string    "2026-09-09T12:05:00Z"
@@ -137,6 +141,35 @@ react_q_1               { ... }
 > `job:{jobId}` tracking hash; questions are deliberately left in place so other
 > jobs' data is not destroyed.
 
+### 3. Question dedup set
+
+```
+Key: dedup:{technology}:{difficulty}:{jobTitle}
+     e.g.  dedup:Java:Medium:Senior Engineer
+
+Member                     Value (base64url SHA-256 fingerprint)
+---------------------------------------------------------------
+Qr8Fw2...                  "Q\nwhich api is...\ndistractor A\n..."
+```
+
+Stores a **fingerprint** of the question stem **plus its options** for every
+question already stored under a `{technology}:{difficulty}:{jobTitle}` sorted
+set. The fingerprint is a base64url-encoded SHA-256 of the trimmed + lowercased
+stem and each trimmed + lowercased option, with the options **sorted
+alphabetically** beforehand (so shuffled answer order still counts as the same
+question). Storing a ~43-char hash instead of the raw text keeps the set small.
+
+Before a generated question is pushed, it is matched against this set with an
+**atomic Lua script** (`SADD` the fingerprint; only if it is new, also `ZADD`
+the question). If the fingerprint already exists, the push is **skipped and
+counted** in the job's `duplicate_count`. The set is lazily backfilled from the
+sorted set on first use, so pre-existing questions are deduplicated too. The
+check is O(1) — no full-set scans.
+
+> **Note:** The dedup set, like the sorted set, carries **no TTL**. Members are
+> opaque hashes, so a set leak cannot reveal question text to a Redis
+> observer.
+
 ---
 
 ## Java Models
@@ -167,7 +200,7 @@ react_q_1               { ... }
 | `jobTitle`           | `String`                   | **yes**  | E.g. `"Senior Engineer"`                     |
 | `questionsPerTech`   | `Integer`                  | **yes**  | >= 1. Total = technologies × this            |
 | `areasByTechnology`  | `Map<String,List<String>>` | no       | Sub-topics per technology                    |
-| `existingQuestions`  | `List<String>`             | no       | Questions to avoid repeating                 |
+| `existingQuestions`  | `List<String>`             | no       | Existing question stems to avoid; surfaced to the AI prompt as a soft instruction (not part of the dedup fingerprint) |
 | `provider`           | `String`                   | no       | Optional override, e.g. `"openrouter"`       |
 | `model`              | `String`                   | no       | Optional override, e.g. `"openrouter/free"`  |
 | `temperature`        | `Double`                   | no       | Optional sampling temperature override       |
@@ -175,8 +208,8 @@ react_q_1               { ... }
 ### `JobStatus` — status read model
 
 Fields match the Redis job hash (`jobId`, `status`, `totalRecords`,
-`processedCount`, `failedCount`, `currentStage`, `startedAt`, `lastUpdated`,
-`error`, `provider`, `model`, `difficulty`, `jobTitle`).
+`processedCount`, `failedCount`, `duplicateCount`, `currentStage`, `startedAt`,
+`lastUpdated`, `error`, `provider`, `model`, `difficulty`, `jobTitle`).
 
 ### `QuestionSource` — enum
 
